@@ -1,5 +1,11 @@
 use std::io::{stdin, stdout, Write};
-use termion::{clear, cursor::*, event::Key, input::TermRead, raw::IntoRawMode};
+use termion::{
+    clear,
+    cursor::*,
+    event::*,
+    input::{MouseTerminal, TermRead},
+    raw::IntoRawMode,
+};
 
 // icon for the cursor
 const CURSOR_ICON: char = '⬤';
@@ -125,7 +131,7 @@ fn main() {
     // whether the drawing mode is on or off
     let mut drawing = false;
 
-    let mut stdout = stdout().into_raw_mode().unwrap();
+    let mut stdout = MouseTerminal::from(stdout().into_raw_mode().unwrap());
     let stdin = stdin();
 
     // clear the terminal and hide the terminal cursor
@@ -143,16 +149,17 @@ fn main() {
     stdout.flush().unwrap();
 
     // listen for keypress
-    for c in stdin.keys() {
+    for c in stdin.events() {
+        let mut temp_disable_drawing = false;
         (cols, rows) = termion::terminal_size().unwrap();
         match c.unwrap() {
-            Key::Char('q') => break,
-            Key::Ctrl('c') => break,
-            Key::Esc => break,
+            Event::Key(Key::Char('q')) => break,
+            Event::Key(Key::Ctrl('c')) => break,
+            Event::Key(Key::Esc) => break,
             // toggle drawing mode
-            Key::Char('d') => drawing = !drawing,
-            Key::Char('r') => write!(stdout, "{}{}", clear::All, Hide).unwrap(),
-            Key::Char('c') => {
+            Event::Key(Key::Char('d')) => drawing = !drawing,
+            Event::Key(Key::Char('r')) => write!(stdout, "{}{}", clear::All, Hide).unwrap(),
+            Event::Key(Key::Char('c')) => {
                 // remove every pixel from the matrix
                 matrix.clear();
                 // clear the terminal
@@ -162,32 +169,50 @@ fn main() {
                 // disable the drawing mode
                 drawing = false;
             }
-            Key::Char('n') => {
+            Event::Key(Key::Char('n')) => {
                 // change the color to use
                 color_index = (color_index + 1) % COLORS.len();
                 color = COLORS[color_index][0];
                 cursor = format!("{}{}{}", COLORS[color_index][1], CURSOR_ICON, RESET);
                 write!(stdout, "{}{}{}", cursor, RESET, Left(1)).unwrap();
             }
-            Key::Left => write!(stdout, " {}{}{}", Left(2), cursor, Left(1)).unwrap(),
-            Key::Right => {
+            Event::Key(Key::Left) => write!(stdout, " {}{}{}", Left(2), cursor, Left(1)).unwrap(),
+            Event::Key(Key::Right) => {
                 if DetectCursorPos::cursor_pos(&mut stdout).unwrap().0 < cols - 1 {
                     write!(stdout, " {}{}", cursor, Left(1)).unwrap()
                 }
             }
-            Key::Down => {
+            Event::Key(Key::Down) => {
                 // dont overwrite the status bar
                 if DetectCursorPos::cursor_pos(&mut stdout).unwrap().1 < rows - 1 {
                     write!(stdout, " {}{}{}{}", Left(1), Down(1), cursor, Left(1)).unwrap();
                 }
             }
-            Key::Up => write!(stdout, " {}{}{}{}", Left(1), Up(1), cursor, Left(1)).unwrap(),
+            Event::Key(Key::Up) => {
+                write!(stdout, " {}{}{}{}", Left(1), Up(1), cursor, Left(1)).unwrap()
+            }
+            Event::Mouse(me) => match me {
+                MouseEvent::Hold(x, y) => {
+                    if y != rows && x != cols {
+                        write!(stdout, " {}{}{}{}", Goto(x, y), cursor, Left(1), RESET).unwrap();
+                        temp_disable_drawing = true;
+                    }
+                }
+                MouseEvent::Press(b, x, y) => {
+                    // check if the position is on the status bar
+                    if y != rows && x != cols && b == MouseButton::Left {
+                        write!(stdout, " {}{}{}{}", Goto(x, y), cursor, Left(1), RESET).unwrap();
+                        temp_disable_drawing = true;
+                    }
+                }
+                MouseEvent::Release(y, x) => temp_disable_drawing = true,
+            },
             _ => {}
         }
         // update the status bar
         update_status_bar(&drawing);
 
-        if drawing {
+        if drawing && !temp_disable_drawing {
             // if drawing mode is on, add the current position and color to the matrix
             let (x, y) = DetectCursorPos::cursor_pos(&mut stdout).unwrap();
             matrix.push((x, y, color));

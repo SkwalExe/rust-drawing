@@ -61,6 +61,8 @@ sudo cp target/release/rust-drawing /usr/bin/bin/rust-drawing
 - **[ N ]** : New colors
 - **[ R ]** : Reload pixels (if you change the size of the terminal for example)
 
+You can use the mouse to position the cursor.
+
 # Docker 🐳
 
 ## Run the latest verison
